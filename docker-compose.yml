@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: shopscale-db
+    environment:
+      POSTGRES_USER: shopscale
+      POSTGRES_PASSWORD: shopscale
+      POSTGRES_DB: shopscale
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

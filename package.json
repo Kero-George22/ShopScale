@@ -1,0 +1,41 @@
+{
+  "name": "shopscale",
+  "version": "1.0.0",
+  "description": "Production-oriented e-commerce platform",
+  "homepage": "https://github.com/Kero-George22/ShopScale#readme",
+  "bugs": {
+    "url": "https://github.com/Kero-George22/ShopScale/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kero-George22/ShopScale.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "db:generate": "npx prisma generate",
+    "db:migrate": "npx prisma migrate dev",
+    "db:push": "npx prisma db push",
+    "db:studio": "npx prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.0.0",
+    "bcrypt": "^5.1.1",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0",
+    "prisma": "^5.0.0"
+  }
+}
