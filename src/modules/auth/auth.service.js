@@ -15,12 +15,21 @@ async function register({ name, email, password }) {
 
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-  const user = await prisma.user.create({
-    data: { name, email, passwordHash },
-    select: { id: true, name: true, email: true, role: true, createdAt: true },
-  });
-
-  return user;
+  try {
+    const user = await prisma.user.create({
+      data: { name, email, passwordHash },
+      select: { id: true, name: true, email: true, role: true, createdAt: true },
+    });
+    return user;
+  } catch (error) {
+    // Race condition: another request registered this email between our
+    // findUnique check and this create call. The DB UNIQUE constraint
+    // caught it — convert to a clean 409 instead of letting it bubble as 500.
+    if (error.code === 'P2002') {
+      throw new ApiError(409, 'Email already registered');
+    }
+    throw error;
+  }
 }
 
 async function login({ email, password }) {
