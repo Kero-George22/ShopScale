@@ -7,8 +7,8 @@ dotenv.config({ path: path.resolve(__dirname, '..', '.env.test') });
 
 module.exports = async function () {
   try {
-    // Push schema to test database (creates DB if it doesn't exist, resets all data)
-    execSync('npx prisma db push --force-reset --accept-data-loss --skip-generate', {
+    // Deploy migrations to test database
+    execSync('npx prisma migrate deploy', {
       env: { ...process.env },
       stdio: 'pipe',
     });

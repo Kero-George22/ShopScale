@@ -9,7 +9,7 @@ async function list({ page = 1, limit = 20 }) {
       skip,
       take: limit,
       include: { category: { select: { id: true, name: true } } },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'desc' },  // should have index 
     }),
     prisma.product.count(),
   ]);

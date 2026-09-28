@@ -24,6 +24,7 @@
     "bench:product-details": ".\\tools\\k6-v0.54.0-windows-amd64\\k6.exe run tests/load/product-details.js",
     "bench:login": ".\\tools\\k6-v0.54.0-windows-amd64\\k6.exe run tests/load/login.js",
     "bench:orders": ".\\tools\\k6-v0.54.0-windows-amd64\\k6.exe run tests/load/orders.js",
+    "bench:concurrency": "node tests/concurrency/reproduce-oversell.js",
     "db:generate": "npx prisma generate",
     "db:migrate": "npx prisma migrate dev",
     "db:push": "npx prisma db push",
