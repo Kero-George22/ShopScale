@@ -6,6 +6,8 @@ const rateLimit = require('express-rate-limit');
 const env = require('./config/env');
 const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./modules/auth/auth.routes');
+const productRoutes = require('./modules/products/product.routes');
+const orderRoutes = require('./modules/orders/order.routes');
 
 const app = express();
 
@@ -29,16 +31,25 @@ app.use(cookieParser());
 // Rate limiting for auth routes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: env.nodeEnv === 'test' ? 1000 : 20,
+  max:
+    env.nodeEnv === 'test'
+      ? 10000
+      : parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 20,
   message: { status: 'error', message: 'Too many requests, please try again later' },
 });
 
 // Routes
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/orders', orderRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    memory: process.memoryUsage(),
+  });
 });
 
 // 404 handler
