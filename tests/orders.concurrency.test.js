@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const request = require('supertest');
 const app = require('../src/app');
 const { prisma, cleanDatabase } = require('./helpers');
@@ -42,11 +43,12 @@ describe('Orders & Inventory Concurrency & Invariants', () => {
       },
     });
 
-    // 5 concurrent requests fired simultaneously via Promise.all
+    // 5 concurrent requests with distinct idempotency keys fired simultaneously via Promise.all
     const requests = Array.from({ length: 5 }, () =>
       request(app)
         .post('/api/orders')
         .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           items: [{ productId: product.id, quantity: 1 }],
         })
@@ -81,11 +83,12 @@ describe('Orders & Inventory Concurrency & Invariants', () => {
       },
     });
 
-    // 6 concurrent requests trying to buy 1 item each
+    // 6 concurrent requests trying to buy 1 item each (distinct idempotency keys)
     const requests = Array.from({ length: 6 }, () =>
       request(app)
         .post('/api/orders')
         .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           items: [{ productId: product.id, quantity: 1 }],
         })
@@ -121,6 +124,7 @@ describe('Orders & Inventory Concurrency & Invariants', () => {
     const res = await request(app)
       .post('/api/orders')
       .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         items: [{ productId: product.id, quantity: 1 }],
       });
@@ -145,6 +149,7 @@ describe('Orders & Inventory Concurrency & Invariants', () => {
     const res = await request(app)
       .post('/api/orders')
       .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         items: [{ productId: product.id, quantity: 5 }],
       });
@@ -174,6 +179,7 @@ describe('Orders & Inventory Concurrency & Invariants', () => {
     const res = await request(app)
       .post('/api/orders')
       .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         items: [{ productId: product.id, quantity: 4 }],
       });
@@ -211,6 +217,7 @@ describe('Orders & Inventory Concurrency & Invariants', () => {
     const res = await request(app)
       .post('/api/orders')
       .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         items: [
           { productId: availableProduct.id, quantity: 2 },

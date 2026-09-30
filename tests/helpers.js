@@ -6,6 +6,7 @@ const prisma = require('../src/database/prisma');
  */
 async function cleanDatabase() {
   await prisma.$transaction([
+    prisma.idempotencyKey.deleteMany(),
     prisma.orderItem.deleteMany(),
     prisma.order.deleteMany(),
     prisma.cartItem.deleteMany(),

@@ -16,7 +16,9 @@ async function resetBenchmarkData() {
   });
 
   if (user) {
-    // Delete orders and tokens for this user
+    await prisma.idempotencyKey.deleteMany({
+      where: { userId: user.id },
+    });
     await prisma.orderItem.deleteMany({
       where: { order: { userId: user.id } },
     });

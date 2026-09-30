@@ -46,10 +46,13 @@ export default function (data) {
     ],
   });
 
+  const idempotencyKey = `bench-vu${__VU}-it${__ITER}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
   const res = http.post(`${BASE_URL}/api/orders`, payload, {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${data.token}`,
+      'Idempotency-Key': idempotencyKey,
     },
   });
 

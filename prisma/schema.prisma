@@ -31,6 +31,7 @@ model User {
   refreshTokens RefreshToken[]
   cart          Cart?
   orders        Order[]
+  idempotencyKeys IdempotencyKey[]
 
   @@map("users")
 }
@@ -125,4 +126,19 @@ model OrderItem {
   product Product @relation(fields: [productId], references: [id])
 
   @@map("order_items")
+}
+
+model IdempotencyKey {
+  key          String
+  userId       String   @map("user_id")
+  requestHash  String   @map("request_hash")
+  responseCode Int      @map("response_code")
+  responseBody Json     @map("response_body")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([key, userId])
+  @@index([createdAt])
+  @@map("idempotency_keys")
 }
