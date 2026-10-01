@@ -513,6 +513,78 @@ describe('V3 Checkout Idempotency & Correctness Invariants', () => {
       const p = await prisma.product.findUnique({ where: { id: product.id } });
       expect(p.stock).toBe(4); // 5 - 1
     });
+
+    it('deterministically recovers when TCP socket is severed immediately after commit before client receives response bytes', async () => {
+      const product = await prisma.product.create({
+        data: { name: 'Socket Severed Item', price: 60.0, stock: 5, categoryId: category.id },
+      });
+
+      const key = crypto.randomUUID();
+      const payload = { items: [{ productId: product.id, quantity: 1 }] };
+
+      // Hook express.response.json to destroy the socket after commit but before response delivery
+      const express = require('express');
+      const originalJson = express.response.json;
+      let socketDestroyed = false;
+
+      express.response.json = function (body) {
+        express.response.json = originalJson; // Restore immediately
+        socketDestroyed = true;
+        this.req.socket.destroy(); // Sever connection
+      };
+
+      // Attempt 1: Client sends request; order commits in PostgreSQL, but socket is destroyed
+      let clientError = null;
+      try {
+        await request(app)
+          .post('/api/orders')
+          .set('Authorization', `Bearer ${token1}`)
+          .set('Idempotency-Key', key)
+          .send(payload);
+      } catch (err) {
+        clientError = err;
+      } finally {
+        express.response.json = originalJson; // Safety restore
+      }
+
+      // Verify client received a network failure (socket hang up)
+      expect(socketDestroyed).toBe(true);
+      expect(clientError).not.toBeNull();
+      expect(clientError.message).toMatch(/socket hang up|ECONNRESET/i);
+
+      // Evidence: Database committed the order before the socket was severed
+      expect(await prisma.order.count()).toBe(1);
+      const committedOrder = await prisma.order.findFirst();
+      expect(committedOrder).not.toBeNull();
+
+      // Evidence: Product stock was decremented once
+      const productAfterDrop = await prisma.product.findUnique({ where: { id: product.id } });
+      expect(productAfterDrop.stock).toBe(4);
+
+      // Evidence: Idempotency record was committed with responseCode 201
+      const savedKey = await prisma.idempotencyKey.findUnique({
+        where: { key_userId: { key, userId: user1.id } },
+      });
+      expect(savedKey).not.toBeNull();
+      expect(savedKey.responseCode).toBe(201);
+      expect(savedKey.responseBody.data.order.id).toBe(committedOrder.id);
+
+      // Attempt 2: Client retries with the exact same Idempotency-Key
+      const resRetry = await request(app)
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token1}`)
+        .set('Idempotency-Key', key)
+        .send(payload);
+
+      expect(resRetry.status).toBe(201);
+      expect(resRetry.body.status).toBe('success');
+      expect(resRetry.body.data.order.id).toBe(committedOrder.id);
+
+      // Evidence: Zero duplicate orders and zero duplicate stock deductions
+      expect(await prisma.order.count()).toBe(1);
+      const finalProduct = await prisma.product.findUnique({ where: { id: product.id } });
+      expect(finalProduct.stock).toBe(4);
+    });
   });
 
   describe('8. Constraint Discrimination: Non-idempotency P2002', () => {

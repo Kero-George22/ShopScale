@@ -235,6 +235,61 @@ async function runVerification() {
   console.log('EVIDENCE: Stock unchanged after 422 (remains 9)?', snapAfterReq4_2.stock === 9);
   console.log('EVIDENCE: Order count unchanged (no 2nd order)?', snapAfterReq4_2.orderCount === snapAfterReq4_1.orderCount);
 
+  // ─────────────────────────────────────────────────────────────────
+  // SCENARIO 5: Deterministic Lost Response (Severed Socket After Commit)
+  // ─────────────────────────────────────────────────────────────────
+  console.log('\n--- SCENARIO 5: Deterministic Lost Response (Severed Socket After Commit) ---');
+  const p5 = await prisma.product.create({
+    data: { name: 'P5-LostResponse', price: 60.0, stock: 5, categoryId: category.id },
+  });
+  const key5 = crypto.randomUUID();
+  const payload5 = { items: [{ productId: p5.id, quantity: 1 }] };
+
+  const express = require('express');
+  const originalJson = express.response.json;
+  let socketSevered = false;
+
+  // Sever the socket inside express.response.json (after DB commit, before client receives bytes)
+  express.response.json = function (body) {
+    express.response.json = originalJson;
+    socketSevered = true;
+    this.req.socket.destroy();
+  };
+
+  let clientError = null;
+  try {
+    await request(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', key5)
+      .send(payload5);
+  } catch (err) {
+    clientError = err;
+  } finally {
+    express.response.json = originalJson;
+  }
+
+  const snapAfterDrop = await getFullDbSnapshot(p5.id, key5, user.id);
+  console.log(`Client Caught Error: ${clientError?.message}`);
+  console.log('State AFTER Socket Severed (Commit Succeeded):', JSON.stringify(snapAfterDrop, null, 2));
+  console.log('EVIDENCE: Socket severed?', socketSevered);
+  console.log('EVIDENCE: Order committed despite lost response?', snapAfterDrop.idempotencyRecord !== null);
+  console.log('EVIDENCE: Stock decremented once (5 -> 4)?', snapAfterDrop.stock === 4);
+
+  // Client retries with the SAME key after catching network failure
+  const res5_retry = await request(app)
+    .post('/api/orders')
+    .set('Authorization', `Bearer ${token}`)
+    .set('Idempotency-Key', key5)
+    .send(payload5);
+
+  const snapAfterRetry5 = await getFullDbSnapshot(p5.id, key5, user.id);
+  console.log(`Retry Request HTTP Status: ${res5_retry.status}`);
+  console.log('State AFTER Retry on Lost Response:', JSON.stringify(snapAfterRetry5, null, 2));
+  console.log('EVIDENCE: Returned original committed order ID?', res5_retry.body.data.order.id === snapAfterDrop.idempotencyRecord.orderIdInBody);
+  console.log('EVIDENCE: Zero duplicate orders created (remains total)?', snapAfterRetry5.orderCount === snapAfterDrop.orderCount);
+  console.log('EVIDENCE: Zero double-decrement (stock remains 4)?', snapAfterRetry5.stock === 4);
+
   console.log('\n======================================================================');
   console.log('  ALL SCENARIOS VERIFIED SUCCESSFULLY WITH REAL DATABASE EVIDENCE');
   console.log('======================================================================\n');
