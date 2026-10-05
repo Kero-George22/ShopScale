@@ -9,6 +9,7 @@ const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./modules/auth/auth.routes');
 const productRoutes = require('./modules/products/product.routes');
 const orderRoutes = require('./modules/orders/order.routes');
+const healthRoutes = require('./modules/health/health.routes');
 
 const app = express();
 
@@ -47,14 +48,8 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    memory: process.memoryUsage(),
-  });
-});
+// Health and readiness checks
+app.use('/health', healthRoutes);
 
 // 404 handler
 app.use((req, res) => {
