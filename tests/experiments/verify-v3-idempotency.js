@@ -19,8 +19,10 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const app = require('../../src/app');
 const { generateAccessToken } = require('../../src/utils/token');
+const { assertTestDatabase } = require('../test-db-guard');
 
 async function cleanDatabase() {
+  assertTestDatabase();
   await prisma.$transaction([
     prisma.idempotencyKey.deleteMany(),
     prisma.orderItem.deleteMany(),

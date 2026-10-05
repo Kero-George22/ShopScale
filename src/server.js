@@ -1,6 +1,7 @@
 const app = require('./app');
 const env = require('./config/env');
+const { logger } = require('./utils/logger');
 
 app.listen(env.port, () => {
-  console.log(`Server running on port ${env.port} in ${env.nodeEnv} mode`);
+  logger.info({ port: env.port, env: env.nodeEnv }, `Server running on port ${env.port} in ${env.nodeEnv} mode`);
 });

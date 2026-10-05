@@ -21,9 +21,11 @@ const prisma = new PrismaClient();
 const app = require('../../src/app');
 const { generateAccessToken } = require('../../src/utils/token');
 const request = require('supertest');
+const { assertTestDatabase } = require('../test-db-guard');
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 async function cleanDatabase() {
+  assertTestDatabase();
   await prisma.$transaction([
     prisma.orderItem.deleteMany(),
     prisma.order.deleteMany(),

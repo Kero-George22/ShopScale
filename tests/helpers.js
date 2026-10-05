@@ -1,10 +1,14 @@
 const prisma = require('../src/database/prisma');
+const { assertTestDatabase } = require('./test-db-guard');
 
 /**
  * Deletes all data from all tables in the correct order (respects FK constraints).
+ * Protected by assertTestDatabase() to prevent wiping non-test databases.
  * Call in beforeEach() to isolate tests from each other.
  */
 async function cleanDatabase() {
+  assertTestDatabase();
+
   await prisma.$transaction([
     prisma.idempotencyKey.deleteMany(),
     prisma.orderItem.deleteMany(),

@@ -4,12 +4,16 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const env = require('./config/env');
+const requestLogger = require('./middleware/requestLogger');
 const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./modules/auth/auth.routes');
 const productRoutes = require('./modules/products/product.routes');
 const orderRoutes = require('./modules/orders/order.routes');
 
 const app = express();
+
+// Request logging and request ID tracking
+app.use(requestLogger);
 
 // Security headers
 app.use(helmet());

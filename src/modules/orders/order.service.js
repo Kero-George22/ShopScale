@@ -63,6 +63,7 @@ async function createOrder(userId, items, idempotencyKey) {
     }
     return {
       cached: true,
+      outcome: 'idempotency_replay',
       responseCode: existing.responseCode,
       responseBody: existing.responseBody,
     };
@@ -181,6 +182,7 @@ async function createOrder(userId, items, idempotencyKey) {
 
       return {
         cached: false,
+        outcome: 'completed',
         responseCode: 201,
         responseBody,
       };
@@ -207,6 +209,7 @@ async function createOrder(userId, items, idempotencyKey) {
         }
         return {
           cached: true,
+          outcome: 'idempotency_replay',
           responseCode: completed.responseCode,
           responseBody: completed.responseBody,
         };
