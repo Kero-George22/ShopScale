@@ -166,6 +166,26 @@ describe('V4.2A — Health & Readiness', () => {
     });
   });
 
+  describe('4b. HEALTH_CHECK_TIMEOUT_MS validation', () => {
+    const { getTimeoutMs } = require('../src/modules/health/health.controller');
+
+    it.each([
+      [undefined, 3000],
+      ['', 3000],
+      ['abc', 3000],
+      ['0', 3000],
+      ['-5', 3000],
+      ['1e3', 3000],
+      ['3000ms', 3000],
+      ['2500', 2500],
+      ['99999999999', 30000],
+    ])('HEALTH_CHECK_TIMEOUT_MS=%p resolves to %p', (raw, expected) => {
+      if (raw === undefined) delete process.env.HEALTH_CHECK_TIMEOUT_MS;
+      else process.env.HEALTH_CHECK_TIMEOUT_MS = raw;
+      expect(getTimeoutMs()).toBe(expected);
+    });
+  });
+
   describe('6. Backward-Compatible Legacy /health Endpoint', () => {
     it('continues returning 200 OK with timestamp on GET /health', async () => {
       const res = await request(app).get('/health');
