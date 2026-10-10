@@ -1,5 +1,6 @@
 const prisma = require('../../database/prisma');
 const { logger } = require('../../utils/logger');
+const { isShuttingDown } = require('../../utils/shutdown');
 
 const DEFAULT_TIMEOUT_MS = 3000;
 const MAX_TIMEOUT_MS = 30000;
@@ -58,8 +59,32 @@ const liveness = (req, res) => {
 const readiness = async (req, res) => {
   const log = req.log || logger;
 
+  // Gate 1: reject immediately if shutdown has already started (without querying database)
+  if (isShuttingDown()) {
+    log.warn(
+      { requestId: req.requestId, reason: 'shutting_down' },
+      'Readiness check rejected: application is shutting down'
+    );
+    return res.status(503).json({
+      status: 'error',
+      message: 'Service unavailable',
+    });
+  }
+
   try {
     await checkDatabase();
+
+    // Gate 2: reject if shutdown was triggered while checkDatabase was in-flight
+    if (isShuttingDown()) {
+      log.warn(
+        { requestId: req.requestId, reason: 'shutdown_started_during_check' },
+        'Readiness check rejected: application entered shutdown during database check'
+      );
+      return res.status(503).json({
+        status: 'error',
+        message: 'Service unavailable',
+      });
+    }
 
     res.status(200).json({
       status: 'ok',
