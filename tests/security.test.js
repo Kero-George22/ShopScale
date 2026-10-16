@@ -20,9 +20,18 @@ const crypto = require('crypto');
 describe('Startup configuration validation', () => {
   const ORIGINAL_ENV = { ...process.env };
 
+  beforeEach(() => {
+    jest.resetModules();
+    process.env = { ...ORIGINAL_ENV };
+  });
+
   afterEach(() => {
     jest.resetModules();
-    // Restore all env vars
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  afterAll(() => {
+    jest.resetModules();
     process.env = { ...ORIGINAL_ENV };
   });
 
@@ -155,41 +164,202 @@ describe('Startup configuration validation', () => {
 // ──────────────────────────────────────────────────
 
 describe('NODE_ENV error disclosure', () => {
-  test('does not expose stack traces when NODE_ENV is not "development"', async () => {
-    // In test environment, NODE_ENV=test so isDevMode=false.
-    // This is the same code path as production or unset NODE_ENV.
-    const app = require('../src/app');
-    const env = require('../src/config/env');
+  const { Prisma } = require('@prisma/client');
+  const errorHandler = require('../src/middleware/errorHandler');
+  const env = require('../src/config/env');
+  const express = require('express');
 
-    expect(env.isDevMode).toBe(false);
+  function createMockContext() {
+    const req = {
+      requestId: 'req-sec-test-123',
+      method: 'GET',
+      path: '/test-error',
+      originalUrl: '/test-error',
+      log: {
+        warn: jest.fn(),
+        error: jest.fn(),
+        info: jest.fn(),
+      },
+    };
+    const res = {
+      statusCode: null,
+      body: null,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(data) {
+        this.body = data;
+        return this;
+      },
+    };
+    const next = jest.fn();
+    return { req, res, next };
+  }
 
-    // Send invalid JSON to trigger a body-parser SyntaxError (unexpected, non-operational)
-    const res = await request(app)
-      .post('/api/auth/login')
-      .set('Content-Type', 'application/json')
-      .send('{"broken json');
+  describe('direct errorHandler middleware verification', () => {
+    let originalIsDevMode;
 
-    expect(res.status).toBe(400);
-    expect(res.body).not.toHaveProperty('stack');
+    beforeEach(() => {
+      originalIsDevMode = env.isDevMode;
+    });
+
+    afterEach(() => {
+      env.isDevMode = originalIsDevMode;
+    });
+
+    test('hides stack traces and sensitive error message when isDevMode is false (production / unset)', () => {
+      env.isDevMode = false;
+      const { req, res, next } = createMockContext();
+      const secretError = new Error('Sensitive database credentials leak: postgresql://admin:secret@db');
+
+      errorHandler(secretError, req, res, next);
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body).toEqual({
+        status: 'error',
+        statusCode: 500,
+        message: 'Internal server error',
+      });
+      expect(res.body.stack).toBeUndefined();
+      expect(JSON.stringify(res.body)).not.toContain('Sensitive database credentials');
+      expect(JSON.stringify(res.body)).not.toContain('secret@db');
+    });
+
+    test('includes stack trace when isDevMode is true (explicit development)', () => {
+      env.isDevMode = true;
+      const { req, res, next } = createMockContext();
+      const testError = new Error('Development debugging error');
+
+      errorHandler(testError, req, res, next);
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body.status).toBe('error');
+      expect(res.body.stack).toBeDefined();
+      expect(res.body.stack).toContain('Development debugging error');
+    });
+
+    test('hides Prisma P2002 internal field target when isDevMode is false', () => {
+      env.isDevMode = false;
+      const { req, res, next } = createMockContext();
+      const prismaError = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`email`)',
+        {
+          code: 'P2002',
+          clientVersion: '5.22.0',
+          meta: { target: ['email'] },
+        }
+      );
+
+      errorHandler(prismaError, req, res, next);
+
+      expect(res.statusCode).toBe(409);
+      expect(res.body).toEqual({
+        status: 'error',
+        statusCode: 409,
+        message: 'A record with this value already exists',
+      });
+      expect(res.body.field).toBeUndefined();
+    });
+
+    test('exposes Prisma P2002 field target when isDevMode is true', () => {
+      env.isDevMode = true;
+      const { req, res, next } = createMockContext();
+      const prismaError = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`email`)',
+        {
+          code: 'P2002',
+          clientVersion: '5.22.0',
+          meta: { target: ['email'] },
+        }
+      );
+
+      errorHandler(prismaError, req, res, next);
+
+      expect(res.statusCode).toBe(409);
+      expect(res.body.field).toBe('email');
+    });
+
+    test('masks unhandled Prisma database errors with a generic message', () => {
+      env.isDevMode = false;
+      const { req, res, next } = createMockContext();
+      const prismaError = new Prisma.PrismaClientKnownRequestError(
+        'Raw database connection reset by peer in query execution',
+        {
+          code: 'P9999',
+          clientVersion: '5.22.0',
+        }
+      );
+
+      errorHandler(prismaError, req, res, next);
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body).toEqual({
+        status: 'error',
+        statusCode: 500,
+        message: 'A database error occurred',
+      });
+      expect(JSON.stringify(res.body)).not.toContain('connection reset');
+    });
   });
 
-  test('does not expose stack traces when NODE_ENV is unset (isDevMode=false)', async () => {
-    // In test environment, NODE_ENV=test so isDevMode=false
-    // This verifies the same code path as unset NODE_ENV
-    const app = require('../src/app');
-    const env = require('../src/config/env');
+  describe('HTTP error disclosure test harness', () => {
+    let testApp;
 
-    // Confirm isDevMode is false in test environment
-    expect(env.isDevMode).toBe(false);
+    beforeAll(() => {
+      testApp = express();
+      testApp.get('/test-unexpected-error', (req, res, next) => {
+        next(new Error('Internal query failure: SELECT * FROM secrets WHERE key = "supersecret"'));
+      });
+      testApp.get('/test-prisma-error', (req, res, next) => {
+        next(
+          new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+            code: 'P2002',
+            clientVersion: '5.22.0',
+            meta: { target: ['user_id', 'role'] },
+          })
+        );
+      });
+      testApp.use(errorHandler);
+    });
 
-    // Send invalid JSON to trigger a body-parser error (SyntaxError, statusCode 400)
-    const res = await request(app)
-      .post('/api/auth/login')
-      .set('Content-Type', 'application/json')
-      .send('{"invalid json');
+    test('HTTP client response for 500 error hides stack trace and query internals', async () => {
+      const res = await request(testApp).get('/test-unexpected-error');
 
-    expect(res.status).toBe(400);
-    expect(res.body).not.toHaveProperty('stack');
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({
+        status: 'error',
+        statusCode: 500,
+        message: 'Internal server error',
+      });
+      expect(res.body.stack).toBeUndefined();
+      expect(JSON.stringify(res.body)).not.toContain('supersecret');
+      expect(JSON.stringify(res.body)).not.toContain('SELECT *');
+    });
+
+    test('HTTP client response for Prisma P2002 hides internal target fields in non-dev mode', async () => {
+      const res = await request(testApp).get('/test-prisma-error');
+
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({
+        status: 'error',
+        statusCode: 409,
+        message: 'A record with this value already exists',
+      });
+      expect(res.body.field).toBeUndefined();
+    });
+
+    test('main application hides stack traces on body parsing errors', async () => {
+      const app = require('../src/app');
+
+      const res = await request(app)
+        .post('/api/auth/login')
+        .set('Content-Type', 'application/json')
+        .send('{"malformed json');
+
+      expect(res.status).toBe(400);
+      expect(res.body).not.toHaveProperty('stack');
+    });
   });
 });
 
@@ -237,11 +407,10 @@ describe('JSON body size limit', () => {
 // ──────────────────────────────────────────────────
 
 describe('Checkout items count limit', () => {
-  let app;
-
-  beforeAll(() => {
-    app = require('../src/app');
-  });
+  const { createOrderSchema } = require('../src/modules/orders/order.validation');
+  const validate = require('../src/middleware/validate');
+  const errorHandler = require('../src/middleware/errorHandler');
+  const express = require('express');
 
   function makeItems(count) {
     return Array.from({ length: count }, () => ({
@@ -250,47 +419,123 @@ describe('Checkout items count limit', () => {
     }));
   }
 
-  // Generate a valid JWT for testing validation (request will fail at DB level, not validation)
-  function makeTestToken() {
-    const env = require('../src/config/env');
-    return jwt.sign(
-      { sub: crypto.randomUUID(), role: 'user' },
-      env.accessTokenSecret,
-      { expiresIn: '15m' }
-    );
-  }
+  describe('direct schema validation (createOrderSchema)', () => {
+    test('accepts checkout payload with exactly 100 items', () => {
+      const result = createOrderSchema.safeParse({ items: makeItems(100) });
+      expect(result.success).toBe(true);
+      expect(result.data.items).toHaveLength(100);
+    });
 
-  test('rejects checkout with 101 items (validation error)', async () => {
-    const token = makeTestToken();
+    test('rejects checkout payload with 101 items', () => {
+      const result = createOrderSchema.safeParse({ items: makeItems(101) });
+      expect(result.success).toBe(false);
+      expect(result.error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: ['items'],
+            message: expect.stringContaining('100'),
+          }),
+        ])
+      );
+    });
 
-    const res = await request(app)
-      .post('/api/orders')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ items: makeItems(101) });
+    test('accepts checkout payload with 1 item', () => {
+      const result = createOrderSchema.safeParse({ items: makeItems(1) });
+      expect(result.success).toBe(true);
+    });
 
-    expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/[Vv]alidation/);
-    expect(res.body.errors).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          message: expect.stringContaining('100'),
-        }),
-      ])
-    );
+    test('rejects checkout payload with 0 items', () => {
+      const result = createOrderSchema.safeParse({ items: [] });
+      expect(result.success).toBe(false);
+      expect(result.error.issues[0].message).toContain('at least one item');
+    });
   });
 
-  test('accepts checkout with exactly 100 items (passes validation)', async () => {
-    const token = makeTestToken();
+  describe('validation middleware behavior', () => {
+    test('passes 100 items to next() without error', () => {
+      const middleware = validate(createOrderSchema);
+      const req = { body: { items: makeItems(100) } };
+      const res = {};
+      const next = jest.fn();
 
-    const res = await request(app)
-      .post('/api/orders')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ items: makeItems(100) });
+      middleware(req, res, next);
 
-    // Should NOT be a 400 validation error about item count.
-    // It may fail later (e.g., 404 products not found) but that's expected.
-    // The key assertion is that validation passed.
-    expect(res.status).not.toBe(400);
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    test('passes 101 items to next(err) with 400 validation error', () => {
+      const middleware = validate(createOrderSchema);
+      const req = { body: { items: makeItems(101) } };
+      const res = {};
+      const next = jest.fn();
+
+      middleware(req, res, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      const err = next.mock.calls[0][0];
+      expect(err).toBeDefined();
+      expect(err.statusCode).toBe(400);
+      expect(err.message).toBe('Validation failed');
+      expect(err.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            field: 'items',
+            message: expect.stringContaining('100'),
+          }),
+        ])
+      );
+    });
+  });
+
+  describe('HTTP validation boundary test (isolated from DB)', () => {
+    let testApp;
+
+    beforeAll(() => {
+      testApp = express();
+      testApp.use(express.json());
+      testApp.post(
+        '/test-checkout-validation',
+        validate(createOrderSchema),
+        (req, res) => {
+          res.status(200).json({
+            status: 'success',
+            count: req.body.items.length,
+          });
+        }
+      );
+      testApp.use(errorHandler);
+    });
+
+    test('accepts exactly 100 items over HTTP with 200', async () => {
+      const res = await request(testApp)
+        .post('/test-checkout-validation')
+        .send({ items: makeItems(100) });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        status: 'success',
+        count: 100,
+      });
+    });
+
+    test('rejects 101 items over HTTP with 400 and validation error message', async () => {
+      const res = await request(testApp)
+        .post('/test-checkout-validation')
+        .send({ items: makeItems(101) });
+
+      expect(res.status).toBe(400);
+      expect(res.body.status).toBe('error');
+      expect(res.body.message).toBe('Validation failed');
+      expect(res.body.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            field: 'items',
+            message: expect.stringContaining('100'),
+          }),
+        ])
+      );
+    });
   });
 });
 
