@@ -29,7 +29,7 @@ const errorHandler = (err, req, res, next) => {
           status: 'error',
           statusCode: 409,
           message: 'A record with this value already exists',
-          ...(env.nodeEnv === 'development' && {
+          ...(env.isDevMode && {
             field: err.meta?.target?.join(', '),
           }),
         });
@@ -129,7 +129,7 @@ const errorHandler = (err, req, res, next) => {
     statusCode,
     message,
     ...(err.errors && { errors: err.errors }),
-    ...(env.nodeEnv === 'development' && !err.isOperational && { stack: err.stack }),
+    ...(env.isDevMode && !err.isOperational && { stack: err.stack }),
   });
 };
 

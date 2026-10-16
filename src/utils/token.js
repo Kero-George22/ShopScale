@@ -9,7 +9,7 @@ function generateAccessToken(payload) {
 }
 
 function verifyAccessToken(token) {
-  return jwt.verify(token, env.accessTokenSecret);
+  return jwt.verify(token, env.accessTokenSecret, { algorithms: ['HS256'] });
 }
 
 function generateRefreshToken() {

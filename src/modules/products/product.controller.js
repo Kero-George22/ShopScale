@@ -2,8 +2,8 @@ const catchAsync = require('../../utils/catchAsync');
 const productService = require('./product.service');
 
 const list = catchAsync(async (req, res) => {
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
 
   const result = await productService.list({ page, limit });
   res.json({

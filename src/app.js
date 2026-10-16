@@ -28,7 +28,7 @@ app.use(
 );
 
 // Body parsing
-app.use(express.json());
+app.use(express.json({ limit: '64kb' }));
 
 // Cookie parsing
 app.use(cookieParser());
@@ -36,10 +36,7 @@ app.use(cookieParser());
 // Rate limiting for auth routes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max:
-    env.nodeEnv === 'test'
-      ? 10000
-      : parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 20,
+  max: env.nodeEnv === 'test' ? 10000 : env.authRateLimitMax,
   message: { status: 'error', message: 'Too many requests, please try again later' },
 });
 
