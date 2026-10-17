@@ -73,6 +73,7 @@ model Product {
   cartItems  CartItem[]
   orderItems OrderItem[]
 
+  @@index([createdAt(sort: Desc)])
   @@map("products")
 }
 
@@ -125,6 +126,7 @@ model OrderItem {
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id])
 
+  @@index([orderId])
   @@map("order_items")
 }
 
