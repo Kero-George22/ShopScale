@@ -33,6 +33,7 @@ function createShutdownCoordinator({
   logger,
   timeoutMs = getShutdownTimeoutMs(),
   exit = process.exit,
+  worker = null,
 }) {
   let shutdownPromise = null;
 
@@ -143,7 +144,26 @@ function createShutdownCoordinator({
         );
       }
 
-      // --- Phase 2: Database Disconnect ---
+      // --- Phase 2: Worker Drain ---
+      if (worker && typeof worker.stop === 'function') {
+        worker.stop();
+        const workerDrainMs = Math.min(Math.round(timeoutMs * 0.3), 15000);
+        try {
+          await worker.drain(workerDrainMs);
+          logger.info(
+            { event: 'shutdown.worker_drained' },
+            'Background worker drained successfully'
+          );
+        } catch (workerErr) {
+          logger.error(
+            { event: 'shutdown.worker_drain_error', err: workerErr },
+            'Error draining background worker'
+          );
+          exitCode = 1;
+        }
+      }
+
+      // --- Phase 3: Database Disconnect ---
       const disconnectTimeoutMs = Math.min(timeoutMs, 5000);
       let disconnectTimer;
       const disconnectDeadline = new Promise((_, reject) => {
@@ -186,7 +206,7 @@ function createShutdownCoordinator({
         }
       }
 
-      // --- Phase 3: Final Exit ---
+      // --- Phase 4: Final Exit ---
       const totalElapsedMs =
         Math.round(Number(process.hrtime.bigint() - startTime) / 1e4) / 100;
       const logFn = exitCode === 0 ? logger.info.bind(logger) : logger.error.bind(logger);

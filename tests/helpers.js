@@ -16,6 +16,7 @@ async function cleanDatabase() {
     prisma.cartItem.deleteMany(),
     prisma.cart.deleteMany(),
     prisma.refreshToken.deleteMany(),
+    prisma.report.deleteMany(),
     prisma.user.deleteMany(),
     prisma.product.deleteMany(),
     prisma.category.deleteMany(),

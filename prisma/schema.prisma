@@ -19,6 +19,13 @@ enum OrderStatus {
   COMPLETED
 }
 
+enum ReportStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model User {
   id           String   @id @default(uuid())
   name         String
@@ -32,6 +39,7 @@ model User {
   cart          Cart?
   orders        Order[]
   idempotencyKeys IdempotencyKey[]
+  reports       Report[]
 
   @@map("users")
 }
@@ -143,4 +151,23 @@ model IdempotencyKey {
   @@id([key, userId])
   @@index([createdAt])
   @@map("idempotency_keys")
+}
+
+model Report {
+  id            String       @id @default(uuid())
+  type          String       @map("type")
+  status        ReportStatus @default(QUEUED) @map("status")
+  parameters    Json         @map("parameters")
+  result        Json?        @map("result")
+  error         String?      @map("error")
+  requestedById String       @map("requested_by_id")
+  attempts      Int          @default(0) @map("attempts")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  requestedBy User @relation(fields: [requestedById], references: [id])
+
+  @@index([requestedById, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@map("reports")
 }

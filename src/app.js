@@ -10,6 +10,7 @@ const authRoutes = require('./modules/auth/auth.routes');
 const productRoutes = require('./modules/products/product.routes');
 const orderRoutes = require('./modules/orders/order.routes');
 const healthRoutes = require('./modules/health/health.routes');
+const reportRoutes = require('./modules/reports/report.routes');
 
 const app = express();
 
@@ -44,6 +45,7 @@ const authLimiter = rateLimit({
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/reports', reportRoutes);
 
 // Health and readiness checks
 app.use('/health', healthRoutes);
